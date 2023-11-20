@@ -1,4 +1,5 @@
 import re
+import json
 from Tree.Tree import my_tree, tree_node
 from Prompts.ReAct_prompts import FORMAT_INSTRUCTIONS_SYSTEM_FUNCTION, FORMAT_INSTRUCTIONS_USER_FUNCTION
 from Algorithms.base_search import base_search_method
@@ -153,7 +154,14 @@ class single_chain(base_search_method):
                 temp_node.description = function_input
                 child_io_state = deepcopy(now_node.io_state)
 
-                observation, status = child_io_state.step(action_name=now_node.description, action_input=function_input)
+                if now_node.description == "SyntaxError":
+                    # 2 means there is an error in the input
+                    status = 2
+                    raw_code = json.loads(function_input)["raw_code"]
+                    observation = f"SytaxError: invalid syntax for code \"{raw_code}\""
+                    print(observation)
+                else:
+                    observation, status = child_io_state.step(action_name=now_node.description, action_input=function_input)
                 temp_node.observation = observation
                 temp_node.observation_code = status
 

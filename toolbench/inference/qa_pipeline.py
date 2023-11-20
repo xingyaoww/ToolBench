@@ -26,7 +26,7 @@ if __name__ == "__main__":
     parser.add_argument('--rapidapi_key', type=str, default="",required=False, help='your rapidapi key to request rapidapi service')
     parser.add_argument('--use_rapidapi_key', action="store_true", help="To use customized rapidapi service or not.")
     parser.add_argument('--api_customization', action="store_true", help="To use customized api or not.")
-    
+    parser.add_argument('--action_mode', type=str, default="json_as_action", choices=["json_as_action", "code_as_action"], required=False, help='action mode')
     args = parser.parse_args()
 
     pipeline_runner = pipeline_runner(args)

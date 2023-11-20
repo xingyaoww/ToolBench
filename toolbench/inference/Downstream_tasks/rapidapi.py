@@ -7,6 +7,7 @@ from tqdm import tqdm
 from termcolor import colored
 import random
 from toolbench.inference.LLM.chatgpt_function_model import ChatGPTFunction
+from toolbench.inference.LLM.chat_completion_model import ChatCompletion
 from toolbench.inference.LLM.davinci_model import Davinci
 from toolbench.inference.LLM.tool_llama_lora_model import ToolLLaMALoRA
 from toolbench.inference.LLM.tool_llama_model import ToolLLaMA
@@ -444,7 +445,10 @@ class pipeline_runner:
     
     def method_converter(self, backbone_model, openai_key, method, env, process_id, single_chain_max_step=12, max_query_count=60, callbacks=None):
         if callbacks is None: callbacks = []
-        if backbone_model == "chatgpt_function":
+        if backbone_model.startswith("chat_completion"):
+            model = backbone_model.split(":")[-1]
+            llm_forward = ChatCompletion(model=model, openai_key=openai_key, action_mode=self.args.action_mode)
+        elif backbone_model == "chatgpt_function":
             model = "gpt-3.5-turbo-16k-0613"
             llm_forward = ChatGPTFunction(model=model, openai_key=openai_key)
         elif backbone_model == "davinci":
