@@ -186,24 +186,12 @@ class ChatCompletion:
     def _build_fn_str_and_list_json(self, functions):
         func_str = ""
         func_list = []
-        func_name_to_args = {}
         for function_dict in functions:
             param_str = ""
             api_name = function_dict["name"]
             func_list.append(api_name)
-            args = []
             if "Finish" in api_name:
                 param_str = f'"return_type": string, "final_answer": string, '
-                args = [
-                    {
-                        "name": "return_type",
-                        "type": "string",
-                    },
-                    {
-                        "name": "final_answer",
-                        "type": "string",
-                    }
-                ]
                 api_desc = "If you believe that you have obtained a result that can answer the task, please call this function to provide the final answer. ALWAYS call this function at the end of your attempt to answer the question finally."
                 func_str += f"{api_name}: {api_desc}. Your input should be a json (args json schema): {param_str} The Action to trigger this API should be {api_name} and the input parameters should be a json dict string. Pay attention to the type of parameters.\n\n"
             else:
@@ -211,37 +199,20 @@ class ChatCompletion:
                 for param_name in function_dict["parameters"]["properties"]:
                     data_type = function_dict["parameters"]["properties"][param_name]["type"]
                     param_str += f'"{param_name}": {data_type}, '
-                    args.append({
-                        "name": param_name,
-                        "type": data_type,
-                    })
                 param_str = "{{" + param_str + "}}"
                 func_str += f"{api_name}: {api_desc}. Your input should be a json (args json schema): {param_str} The Action to trigger this API should be {api_name} and the input parameters should be a json dict string. Pay attention to the type of parameters.\n\n"
-            func_name_to_args[api_name] = args
         func_list = str(func_list)
-        return func_str, func_list, func_name_to_args
+        return func_str, func_list
 
     def _build_fn_str_and_list_code(self, functions):
         func_str = ""
         func_list = []
-        func_name_to_args = {}
         for function_dict in functions:
             param_str = ""
             api_name = function_dict["name"]
             func_list.append(api_name)
-            args = []
             if "Finish" in api_name:
                 param_str = f'return_type: str, final_answer: str, '
-                args = [
-                    {
-                        "name": "return_type",
-                        "type": "str",
-                    },
-                    {
-                        "name": "final_answer",
-                        "type": "str",
-                    }
-                ]
                 api_desc = "If you believe that you have obtained a result that can answer the task, please call this function to provide the final answer. ALWAYS call this function at the end of your attempt to answer the question finally."
             else:
                 api_desc = function_dict["description"][function_dict["description"].find("The description of this function is: ")+len("The description of this function is: "):]
@@ -255,50 +226,32 @@ class ChatCompletion:
                         "boolean": "bool",
                     }[data_type]
                     param_str += f'{param_name}: {data_type}, '
-                    args.append({
-                        "name": param_name,
-                        "type": data_type,
-                    })
             func_str += f"{api_name}: {api_desc}. Your action should be a one-line Python code: {api_name}({param_str}). Pay attention to the type of parameters.\n\n"
-            func_name_to_args[api_name] = args
         func_list = str(func_list)
-        return func_str, func_list, func_name_to_args
+        return func_str, func_list
 
     def build_system_message(self, functions):
         action_mode = self.action_mode
         if action_mode == "json_as_action":
-            func_str, func_list, func_name_to_args = self._build_fn_str_and_list_json(functions)
+            func_str, func_list = self._build_fn_str_and_list_json(functions)
             base_template = JSON_AS_ACTION_SYSTEM_MESSAGE
         elif action_mode == "code_as_action":
-            func_str, func_list, func_name_to_args = self._build_fn_str_and_list_code(functions)
+            func_str, func_list = self._build_fn_str_and_list_code(functions)
             base_template = CODE_AS_ACTION_SYSTEM_MESSAGE
         else:
             raise NotImplementedError
-        return base_template.replace("{func_str}", func_str).replace("{func_list}", func_list), func_name_to_args
+        return base_template.replace("{func_str}", func_str).replace("{func_list}", func_list)
 
-    def parse(self,functions,process_id,**args):
-        conv = get_conversation_template("tool-llama-single-round")
-        roles = {
-            "system": conv.roles[0],
-            "user": conv.roles[1],
-            "function": conv.roles[2],
-            "assistant": conv.roles[3]
-        }
-        conversation_history = self.conversation_history
-        question = ''
-        for message in conversation_history:
-            role = roles[message['role']]
-            content = message['content']
-            if role == "User":
-                question = content
-                break
-
-        system_message, func_name_to_args = self.build_system_message(functions)
+    def build_initial_messages(self, functions, question):
+        system_message = self.build_system_message(functions)
         messages = [
             {"role": "system", "content": system_message},
             {"role": "user", "content": f"Please answer the question: {question}"},
         ]
+        return messages
 
+    def parse(self,functions,process_id,**args):
+        messages = self.conversation_history
         resp, usage = chat_completion_request(self.openai_key, messages, model=self.model)
         content = resp["content"]
         print(f"RAW Response: {content}")
@@ -307,50 +260,26 @@ class ChatCompletion:
         if self.action_mode == "json_as_action":
             # react format prediction
             thought, action, action_input = react_parser(content)
-        
-        elif self.action_mode == "code_as_action":
-            thought, action_raw = code_parser(content)
-            # parse a function call from the action with ast
-            try:
-                parsed = ast.parse(action_raw)
-                assert len(parsed.body) == 1
-                parsed = parsed.body[0]
-                assert isinstance(parsed, ast.Expr)
-                action = parsed.value.func.id
-                # action_input should be keyword arguments in a json
-                action_input = {}
-                # Handle positional arguments
-                if action in func_name_to_args:
-                    cur_func_args = func_name_to_args[action]
-                    for i, pos_arg in enumerate(parsed.value.args):
-                        assert isinstance(pos_arg, ast.Constant)
-                        action_input[cur_func_args[i]["name"]] = pos_arg.value
-                        print(f"**** Assign pos ID {cur_func_args[i]['name']}: {pos_arg.value}")
-                else:
-                    print(f"**** No args for {action}")
-
-                for keyword in parsed.value.keywords:
-                    assert isinstance(keyword, ast.keyword)
-                    assert isinstance(keyword.arg, str)
-                    assert isinstance(keyword.value, ast.Constant)
-                    action_input[keyword.arg] = keyword.value.value
-                action_input = json.dumps(action_input)
-            except SyntaxError:
-                traceback.print_exc()
-                action = "SyntaxError"
-                # get the last line
-                action_input = json.dumps({"raw_code": action_raw})
-
-            extra_function_call_kwargs["raw_code"] = action_raw
-        extra_function_call_kwargs["raw_msg"] = content
-
-        message = {
-            "role": "assistant",
-            "content": thought,
-            "function_call": {
-                "name": action,
-                "arguments": action_input,
-                **extra_function_call_kwargs,
+            message = {
+                "role": "assistant",
+                "content": thought,
+                "function_call": {
+                    "type": "json_as_action",
+                    "name": action,
+                    "arguments": action_input,
+                    **extra_function_call_kwargs,
+                }
             }
-        }
+        elif self.action_mode == "code_as_action":
+            thought, raw_code = code_parser(content)
+            # parse a function call from the action with ast
+            message = {
+                "role": "assistant",
+                "content": thought,
+                "function_call": {
+                    "type": "code_as_action",
+                    "code": raw_code,
+                }
+            }
+
         return message, 0, usage["total_tokens"]
