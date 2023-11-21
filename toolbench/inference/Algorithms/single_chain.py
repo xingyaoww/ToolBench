@@ -258,7 +258,6 @@ class single_chain(base_search_method):
                     # execute the code
                     repl = PythonREPL(
                         user_ns=user_ns,
-                        max_observation_length=self.io_func.max_observation_length,
                     )
                     observation = repl(code)
                     status = 0

@@ -17,12 +17,12 @@ class PythonREPL:
     def __init__(
         self,
         user_ns: Mapping[str, Any],
-        max_observation_length: int = 1024,
+        # max_observation_length: int = 1024,
         timeout: int = 30,
     ) -> None:
         super().__init__()
         self.user_ns = user_ns
-        self.max_observation_length = max_observation_length
+        # self.max_observation_length = max_observation_length
         self.timeout = timeout
         self.reset()
 
@@ -70,13 +70,13 @@ class PythonREPL:
                 output,
             )
 
-            if len(output) > self.max_observation_length:
-                # make sure the beginning and the end of the output are not truncated
-                output = (
-                    output[: self.max_observation_length // 2]
-                    + "\n[...truncated due to length...]\n"
-                    + output[-self.max_observation_length // 2 :]
-                )
+            # if len(output) > self.max_observation_length:
+            #     # make sure the beginning and the end of the output are not truncated
+            #     output = (
+            #         output[: self.max_observation_length // 2]
+            #         + "\n[...truncated due to length...]\n"
+            #         + output[-self.max_observation_length // 2 :]
+            #     )
 
         return output
 
