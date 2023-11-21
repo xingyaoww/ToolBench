@@ -66,7 +66,7 @@ CODE_AS_ACTION_SYSTEM_MESSAGE = BASE_SYSTEM_MESSAGE.replace(
     )
 ).replace(
     "{{ACTION_DESC}}",
-    "Code: MUST be valid Python code (i.e., can be executed directly). Be sure to print out function return values if you want to see them."
+    "Code: MUST be valid Python code (i.e., can be executed directly)."
 ).replace(
     "{{FINISH}}",
     (
