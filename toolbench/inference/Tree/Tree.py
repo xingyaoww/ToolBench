@@ -88,7 +88,14 @@ class tree_node:
     def print(self,process_id = 0):
         if process_id != 0:
             return
-        color_converter = {"Thought":"red", "Action": "blue", "Action Input": "cyan","Final Answer": "green","Reflection":"blue"}
+        color_converter = {
+            "Thought":"red",
+            "Action": "blue",
+            "Code Action": "magenta",
+            "Action Input": "cyan",
+            "Final Answer": "green",
+            "Reflection":"blue"
+        }
         print(colored(f"{self.node_type}: {self.description}",color = color_converter[self.node_type]))
         if self.observation != "":
             if len(self.observation) < 1536:

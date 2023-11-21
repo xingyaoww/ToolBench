@@ -2,11 +2,8 @@
 # coding=utf-8
 from typing import Optional, List, Mapping, Any
 from termcolor import colored
-import ast
-import json
-import random
+import re
 import openai
-import traceback
 from typing import Optional
 from tenacity import retry, wait_random_exponential, stop_after_attempt
 from toolbench.model.model_adapter import get_conversation_template
@@ -21,7 +18,7 @@ Use the following format:
 
 Remember: (1) Follow the format, i.e,
 {{FORMAT}}
-(2) The Action: MUST be one of the following: {func_list}
+(2) {{ACTION_DESC}}
 (3) If you believe that you have obtained enough information (which can be judge from the history observations) that can answer the task, please call:
 {{FINISH}}
 """
@@ -43,6 +40,9 @@ JSON_AS_ACTION_SYSTEM_MESSAGE = BASE_SYSTEM_MESSAGE.replace(
         "End Action\n"
     )
 ).replace(
+    "{{ACTION_DESC}}",
+    "Action: MUST be one of the following: {func_list}"
+).replace(
     "{{FINISH}}",
     (
         "Action: Finish\n"
@@ -54,20 +54,23 @@ CODE_AS_ACTION_SYSTEM_MESSAGE = BASE_SYSTEM_MESSAGE.replace(
     "{{FORMAT_INSTRUCTIONS}}",
     (
         "Thought: you should always think about what to do\n"
-        "Action: one-line python code (the action to take), should call one function from {func_list}\n"
+        "Code: executable Python code (the action to take), should call function from {func_list}\n"
         "End Action\n"
     )
 ).replace(
     "{{FORMAT}}",
     (
         "Thought:\n"
-        "Action:\n"
+        "Code:\n"
         "End Action\n"
     )
 ).replace(
+    "{{ACTION_DESC}}",
+    "Code: MUST be valid Python code (i.e., can be executed directly). Be sure to print out function return values if you want to see them."
+).replace(
     "{{FINISH}}",
     (
-        "Action: Finish(return_type=\"give_answer\", final_answer=\"your answer string\")\n"
+        "Code: Finish(return_type=\"give_answer\", final_answer=\"your answer string\")\n"
     )
 )
 
@@ -80,12 +83,14 @@ def react_parser(string):
     return thought[0], action[0], action_input[0]
 
 def code_parser(string):
-    thought = [string[string.find("Thought: ") + len("Thought: "): string.find("\nAction: ")]]
-    _end_pos = string.find("\nEnd Action")
-    if _end_pos == -1:
-        _end_pos = len(string)
-    action = [string[string.find("Action: ") + len("Action: "): _end_pos]]
-    return thought[0], action[0]
+    thought = string[
+        string.find("Thought:") + len("Thought:"):
+        string.find("Code:")
+    ].strip()
+    action = string[
+        string.find("Code:") + len("Code:"):
+    ].strip().rstrip("End Action")
+    return thought, action
 
 @retry(wait=wait_random_exponential(min=1, max=40), stop=stop_after_attempt(3))
 def chat_completion_request(
@@ -95,14 +100,9 @@ def chat_completion_request(
     stop=None,
     **args):
 
-    use_messages = []
-    for message in messages:
-        if not("valid" in message.keys() and message["valid"] == False):
-            use_messages.append(message)
-
     json_data = {
         "model": model,
-        "messages": use_messages,
+        "messages": messages,
         "max_tokens": 1024,
         "frequency_penalty": 0,
         "presence_penalty": 0,
@@ -123,6 +123,8 @@ def chat_completion_request(
         print(f"OpenAI calling Exception: {e}")
         return e
 
+FINISH_FUNC_DESC = """If you believe that you have obtained a result that can answer the task, please call this function to provide the final answer (set return_type to \"give_answer\"). Alternatively, if you recognize that you are unable to proceed with the task in the current state, call this function to restart (set return_type to \"give_up_and_restart\"). Remember: you must ALWAYS call this function at the end of your attempt, and the only part that will be shown to the user is the final answer, so it should contain sufficient information"""
+
 class ChatCompletion:
     def __init__(
         self,
@@ -138,11 +140,13 @@ class ChatCompletion:
     
     def convert_function_call_message(self, message):
         if message["role"] == "function":
+            # print(f"role==function, message={message}")
             return {
                 "role": "user",
                 "content": f"Observation: {message['content']}"
             }
         if "function_call" in message.keys():
+            # print(f"function_call in message, message={message}")
             return {
                 "role": "assistant",
                 "content": message["function_call"]["raw_msg"],
@@ -192,7 +196,7 @@ class ChatCompletion:
             func_list.append(api_name)
             if "Finish" in api_name:
                 param_str = f'"return_type": string, "final_answer": string, '
-                api_desc = "If you believe that you have obtained a result that can answer the task, please call this function to provide the final answer. ALWAYS call this function at the end of your attempt to answer the question finally."
+                api_desc = FINISH_FUNC_DESC
                 func_str += f"{api_name}: {api_desc}. Your input should be a json (args json schema): {param_str} The Action to trigger this API should be {api_name} and the input parameters should be a json dict string. Pay attention to the type of parameters.\n\n"
             else:
                 api_desc = function_dict["description"][function_dict["description"].find("The description of this function is: ")+len("The description of this function is: "):]
@@ -213,7 +217,7 @@ class ChatCompletion:
             func_list.append(api_name)
             if "Finish" in api_name:
                 param_str = f'return_type: str, final_answer: str, '
-                api_desc = "If you believe that you have obtained a result that can answer the task, please call this function to provide the final answer. ALWAYS call this function at the end of your attempt to answer the question finally."
+                api_desc = FINISH_FUNC_DESC
             else:
                 api_desc = function_dict["description"][function_dict["description"].find("The description of this function is: ")+len("The description of this function is: "):]
                 for param_name in function_dict["parameters"]["properties"]:
@@ -254,9 +258,9 @@ class ChatCompletion:
         messages = self.conversation_history
         resp, usage = chat_completion_request(self.openai_key, messages, model=self.model)
         content = resp["content"]
-        print(f"RAW Response: {content}")
+        print(f"RAW Response:\n{content}")
         
-        extra_function_call_kwargs = {}
+        extra_function_call_kwargs = {"raw_msg": content}
         if self.action_mode == "json_as_action":
             # react format prediction
             thought, action, action_input = react_parser(content)
@@ -279,6 +283,7 @@ class ChatCompletion:
                 "function_call": {
                     "type": "code_as_action",
                     "code": raw_code,
+                    **extra_function_call_kwargs,
                 }
             }
 
