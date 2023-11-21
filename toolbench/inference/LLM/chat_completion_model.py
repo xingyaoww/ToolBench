@@ -2,10 +2,9 @@
 # coding=utf-8
 from typing import Optional, List, Mapping, Any
 from termcolor import colored
-import re
 import openai
+import backoff
 from typing import Optional
-from tenacity import retry, wait_random_exponential, stop_after_attempt
 from toolbench.model.model_adapter import get_conversation_template
 from toolbench.inference.utils import SimpleChatIO, react_parser
 
@@ -89,10 +88,26 @@ def code_parser(string):
     ].strip()
     action = string[
         string.find("Code:") + len("Code:"):
-    ].strip().rstrip("End Action")
+    ].replace(
+        "```python3", ""
+    ).replace(
+        "```python", ""
+    ).replace(
+        "```", ""
+    ).strip().rstrip("End Action")
     return thought, action
 
-@retry(wait=wait_random_exponential(min=1, max=40), stop=stop_after_attempt(3))
+@backoff.on_exception(
+    backoff.fibo,
+    # https://platform.openai.com/docs/guides/error-codes/python-library-error-types
+    (
+        openai.error.APIError,
+        openai.error.Timeout,
+        openai.error.RateLimitError,
+        openai.error.ServiceUnavailableError,
+        openai.error.APIConnectionError,
+    ),
+)
 def chat_completion_request(
     key,
     messages,
@@ -111,17 +126,11 @@ def chat_completion_request(
     if stop is not None:
         json_data.update({"stop": stop})
 
-    try:
-        response = openai.ChatCompletion.create(
-            api_key=key,
-            **json_data,
-        )
-        return response["choices"][0]["message"], response["usage"]
-
-    except Exception as e:
-        print("Unable to generate ChatCompletion response")
-        print(f"OpenAI calling Exception: {e}")
-        return e
+    response = openai.ChatCompletion.create(
+        api_key=key,
+        **json_data,
+    )
+    return response["choices"][0]["message"], response["usage"]
 
 FINISH_FUNC_DESC = """If you believe that you have obtained a result that can answer the task, please call this function to provide the final answer (set return_type to \"give_answer\"). Alternatively, if you recognize that you are unable to proceed with the task in the current state, call this function to restart (set return_type to \"give_up_and_restart\"). Remember: you must ALWAYS call this function at the end of your attempt, and the only part that will be shown to the user is the final answer, so it should contain sufficient information"""
 
