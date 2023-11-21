@@ -119,6 +119,8 @@ You have access of the following tools:\n'''
         
         unduplicated_reflection = {}
         for standardize_tool_name, tool_des in tool_descriptions:
+            if tool_des is None:
+                tool_des = ""
             unduplicated_reflection[standardize_tool_name] = tool_des
 
         for k,(standardize_tool_name, tool_des) in enumerate(unduplicated_reflection.items()):
@@ -281,7 +283,7 @@ You have access of the following tools:\n'''
     def step(self,**args):
         obs, code = self._step(**args)
         if len(obs) > self.max_observation_length:
-            obs = obs[:self.max_observation_length] + "..."
+            obs = obs[:self.max_observation_length] + "[... truncated due to length ...]"
         return obs, code
 
     def _step(self, action_name="", action_input=""):
