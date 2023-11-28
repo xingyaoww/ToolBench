@@ -114,6 +114,9 @@ if __name__ == "__main__":
     output_list = []
     for test_set in test_sets:
         reference_path = f"{args.converted_answer_path}/{test_set}.json"
+        if not os.path.exists(reference_path):
+            print(f"Reference path {reference_path} not exists.")
+            continue
         test_ids = list(json.load(open(os.path.join(args.test_ids, test_set+".json"), "r")).keys())
         reference_examples = json.load(open(reference_path, "r"))
         if os.path.exists(f"{args.save_path}/{test_set}.json"):
