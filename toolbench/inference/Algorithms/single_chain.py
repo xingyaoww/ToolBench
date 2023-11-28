@@ -61,6 +61,9 @@ class single_chain(base_search_method):
                     json_obj["answer_generation"]["final_answer"] = node.description
                     json_obj["answer_generation"]["train_messages"] = node.get_train_messages_from_this_node()
                     break
+        
+        # Save raw messages for root
+        json_obj["root_messages"] = self.tree.root.messages
         return json_obj
 
     def to_json_single(self):
@@ -301,6 +304,7 @@ class single_chain(base_search_method):
                         "content": now_node.observation,
                     })
                 elif "type" in new_message["function_call"].keys():
+                    assert new_message["function_call"]["type"] == "code_as_action"
                     now_node.messages.append({
                         "role": "user",
                         "content": f"Observation: {now_node.observation}"
