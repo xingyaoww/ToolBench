@@ -159,7 +159,7 @@ class tree_node:
         now_node = self
         result = []
         while now_node.father != None:
-            if now_node.node_type == "Action Input":
+            if now_node.node_type == "Action Input" or now_node.node_type == "Code Action":
                 use_messages = deepcopy(now_node.messages)
                 while use_messages[-1]["role"] != "assistant":
                     use_messages = use_messages[:-1]
