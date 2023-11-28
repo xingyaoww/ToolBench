@@ -35,6 +35,9 @@ class ReinforceToolLearningEvaluator(OpenAINormalizedEvaluator):
         available_names = set([tool['name'] for tool in available_tools])
         
         def check_node_valid(node:Dict)->bool:
+            if node['role'] == 'code_action':
+                if node['message']['is_hallucination']:
+                    return False
             # print(node)
             if node['role'] == "tool":
                 if isinstance(node['message'], dict):

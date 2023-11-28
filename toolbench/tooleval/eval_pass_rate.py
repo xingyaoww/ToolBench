@@ -15,17 +15,16 @@ def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument('--converted_answer_path', type=str, default="", required=True, help='converted answer path')
     parser.add_argument('--save_path', type=str, default="", required=False, help='result save path')
-    parser.add_argument('--reference_model', type=str, default="", required=False, help='model predictions path')
     parser.add_argument('--test_ids', type=str, default="", required=True, help='model predictions path')
     parser.add_argument('--evaluator', type=str, default="tooleval_gpt-3.5-turbo_default", required=False, help='which evaluator to use.')
     parser.add_argument('--max_eval_threads', type=int, default=30, required=False, help='max threads nums')
     parser.add_argument('--evaluate_times', type=int, default=4, required=False, help='how many times to predict with the evaluator for each solution path.')
     return parser.parse_args()
 
-def write_results(filename: str, reference_model: str, label_cnt: dict) -> None:
+def write_results(filename: str, label_cnt: dict) -> None:
     with open(filename, 'w', newline='') as file:
         writer = csv.writer(file, delimiter="\t")
-        writer.writerow(["query", "solvable", "available_tools", "model_intermediate_steps", "model_final_step", "model", "query_id", "is_solved", "pass_rate_label", "reason", "not_hallucinate"])
+        writer.writerow(["query", "solvable", "available_tools", "model_intermediate_steps", "model_final_step", "query_id", "is_solved", "pass_rate_label", "reason", "not_hallucinate"])
         for query_id in label_cnt:
             if label_cnt[query_id]["passed"] > label_cnt[query_id]["failed"]:
                 final_label = "passed"
@@ -44,7 +43,7 @@ def write_results(filename: str, reference_model: str, label_cnt: dict) -> None:
             is_solved = label_cnt[query_id]["is_solved"]
             reason = label_cnt[query_id]["reason"]
             not_hallucinate = label_cnt[query_id]["not_hallucinate"]
-            writer.writerow([query, task_solvable, tool_names, answer_steps, final_step, reference_model, query_id, is_solved, final_label, reason, not_hallucinate])
+            writer.writerow([query, task_solvable, tool_names, answer_steps, final_step, query_id, is_solved, final_label, reason, not_hallucinate])
             
 
 if __name__ == "__main__":
@@ -63,7 +62,7 @@ if __name__ == "__main__":
             not_hallucinate = True
         answer_steps, final_step = get_steps(example)
         
-        if "'name': 'Finish'" not in final_step:
+        if "'name': 'Finish'" not in final_step or "Finish(" not in final_step:
             return query_id, TaskStatus.Solvable, AnswerStatus.Unsolved, "failed", "No answer", not_hallucinate
         
         is_solved, is_solved_reason = evaluator.check_is_solved(
@@ -112,15 +111,14 @@ if __name__ == "__main__":
                 label = "failed"
         return query_id, task_solvable, is_solved, label, reason, not_hallucinate
         
-    reference_model = args.reference_model
     output_list = []
     for test_set in test_sets:
-        reference_path = f"{args.converted_answer_path}/{reference_model}/{test_set}.json"
+        reference_path = f"{args.converted_answer_path}/{test_set}.json"
         test_ids = list(json.load(open(os.path.join(args.test_ids, test_set+".json"), "r")).keys())
         reference_examples = json.load(open(reference_path, "r"))
-        if os.path.exists(f"{args.save_path}/{test_set}_{reference_model}.json"):
-            existed_ids = list(json.load(open(f"{args.save_path}/{test_set}_{reference_model}.json", "r")).keys())
-            label_cnt = json.load(open(f"{args.save_path}/{test_set}_{reference_model}.json", "r"))
+        if os.path.exists(f"{args.save_path}/{test_set}.json"):
+            existed_ids = list(json.load(open(f"{args.save_path}/{test_set}.json", "r")).keys())
+            label_cnt = json.load(open(f"{args.save_path}/{test_set}.json", "r"))
         else:
             existed_ids = []
             label_cnt = {}
@@ -163,11 +161,11 @@ if __name__ == "__main__":
                 label_cnt[query_id]["is_solved"] = str(is_solved)
                 label_cnt[query_id]["reason"] = reason
                 label_cnt[query_id]["not_hallucinate"] = not_hallucinate
-                json.dump(label_cnt, open(f"{args.save_path}/{test_set}_{reference_model}.json", "w"), ensure_ascii=False, indent=4)
-        json.dump(label_cnt, open(f"{args.save_path}/{test_set}_{reference_model}.json", "w"), ensure_ascii=False, indent=4)
+                json.dump(label_cnt, open(f"{args.save_path}/{test_set}.json", "w"), ensure_ascii=False, indent=4)
+        json.dump(label_cnt, open(f"{args.save_path}/{test_set}.json", "w"), ensure_ascii=False, indent=4)
         
-        filename = f"{args.save_path}/{test_set}_{reference_model}.csv"
-        write_results(filename, reference_model, label_cnt)
+        filename = f"{args.save_path}/{test_set}.csv"
+        write_results(filename, label_cnt)
         pass_rate = 0
         for query_id in label_cnt:
             if label_cnt[query_id]["failed"] < label_cnt[query_id]["passed"]:
@@ -176,7 +174,7 @@ if __name__ == "__main__":
                 if random.random() < 0.5:
                     pass_rate += 1
         pass_rate /= len(label_cnt)
-        print(f"Test set: {test_set}. Model: {reference_model}. Pass rate: {str(pass_rate)}")
+        print(f"Test set: {test_set}. Pass rate: {str(pass_rate)}")
         
 
         

@@ -36,7 +36,7 @@ class OpenaiPoolRequest:
         if os.path.exists(__pool_file):
             self.pool = json.load(open(__pool_file))
             self.now_pos = random.randint(-1, len(self.pool))
-        print(__pool_file)
+            print(__pool_file)
         if os.environ.get('OPENAI_KEY',None) is not None:
             self.pool.append({
                 'api_key':os.environ.get('OPENAI_KEY'),
