@@ -22,14 +22,27 @@ def generate_init_message_node(eg:ExecutionGraph,functions,query):
     eg[init_node,node] = None
     return node
 
+def generate_init_message_node_from_root_msg(eg, root_messages):
+    system_message = root_messages[0]
+    assert system_message["role"] == "system"
+    init_node = ExecutionNode(role='system', message=system_message["content"])
+    eg.set_init_node(init_node)
+    
+    user_query = root_messages[1]
+    assert user_query["role"] == "user"
+    assert "Please answer the question: " in user_query["content"]
+    node = ExecutionNode(role='user', message=user_query["content"])
+    eg.add_node(node)
+    eg[init_node,node] = None
+    return node
 
 
-def process_valid_data(method,answer_generation):
+def process_valid_data(method,answer_generation, root_messages):
     conversation = answer_generation['train_messages'][-1]
     functions = answer_generation['function']
     query = answer_generation['query']
     eg = ExecutionGraph()
-    last_node = generate_init_message_node(eg,functions,query)
+    last_node = generate_init_message_node_from_root_msg(eg, root_messages)
     
     index = 2
     while index < len(conversation):
@@ -40,12 +53,20 @@ def process_valid_data(method,answer_generation):
             continue
         elif role == 'assistant':
             if 'function_call' in message :
-                node = ExecutionNode(role='tool', message={
-                    'name':message['function_call']['name'],
-                    'arguments':message['function_call']['arguments'],
-                    'response':conversation[index+1]['content'] if message['function_call']['name']!='Finish' else ''
+                if message["function_call"]["type"] == "code_as_action":
+                    node = ExecutionNode(role='code_action', message={
+                        'code': message['function_call']['code'],
+                        'response': conversation[index+1]['content'] if 'Finish' not in message['function_call']['code'] else '',
                     })
-                index = index + 1
+                    index = index + 1
+                else:
+                    assert message["function_call"]["type"] == "json_as_action"
+                    node = ExecutionNode(role='tool', message={
+                        'name':message['function_call']['name'],
+                        'arguments':message['function_call']['arguments'],
+                        'response':conversation[index+1]['content'] if message['function_call']['name']!='Finish' else ''
+                        })
+                    index = index + 1
             else:
                 node = ExecutionNode(role='assistant',
                                         message=message['content'])
@@ -76,7 +97,8 @@ def process_invalid_data(method,data_dict):
     functions = answer_generation['function']
     query = answer_generation['query']
     eg = ExecutionGraph()
-    last_node = generate_init_message_node(eg,functions,query)
+    last_node = generate_init_message_node_from_root_msg(eg, data_dict['root_messages'])
+
     if 'CoT' in method or 'cot' in method:
         trail = random.choice(data_dict["trys"])
 
@@ -89,8 +111,12 @@ def process_invalid_data(method,data_dict):
                     'name':message['description'],
                     'arguments':(trail['chain'][index+1]['description']),
                     'response':(trail['chain'][index+1]['observation'])})
-            
                 index = index + 1
+            elif message['node_type'] == 'Code Action':
+                node = ExecutionNode(role='code_action', message={
+                    'code':message['description'],
+                    'is_hallucination': message["observation_code"] == 1
+                })
             elif message['node_type'] == 'Thought':
                 node = ExecutionNode(role='assistant',
                                         message=message['description'])
@@ -187,6 +213,6 @@ if __name__=='__main__':
             if not data_dict['answer_generation']['valid_data']:
                 answer_dict[qid] = process_invalid_data(method,data_dict)
             else:
-                answer_dict[qid] = process_valid_data(method,data_dict['answer_generation'])
+                answer_dict[qid] = process_valid_data(method,data_dict['answer_generation'], data_dict['root_messages'])
                 
     json.dump(answer_dict,open(output,'w'))
