@@ -53,7 +53,7 @@ CODE_AS_ACTION_SYSTEM_MESSAGE = BASE_SYSTEM_MESSAGE.replace(
     "{{FORMAT_INSTRUCTIONS}}",
     (
         "Thought: you should always think about what to do\n"
-        "Code: executable Python code (the action to take), should call function from {func_list}\n"
+        "Code: one-line Python code (the action to take), should call function from {func_list}\n"
         "End Action\n"
     )
 ).replace(
@@ -65,7 +65,7 @@ CODE_AS_ACTION_SYSTEM_MESSAGE = BASE_SYSTEM_MESSAGE.replace(
     )
 ).replace(
     "{{ACTION_DESC}}",
-    "Code: MUST be valid Python code (i.e., can be executed directly)."
+    "Code: MUST be executable Python code, you can print out the result of the function call to see the result."
 ).replace(
     "{{FINISH}}",
     (
